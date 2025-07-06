@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <AssemblyName>XlsxToPdfConverter.Diy.TestConsole</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XlsxToPdfConverter.Diy\XlsxToPdfConverter.Diy.csproj" />
+    <ProjectReference Include="..\.XlsxToPdfConverter\.XlsxToPdfConverter.csproj" />
+  </ItemGroup>
+</Project>

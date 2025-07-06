@@ -1,0 +1,52 @@
+# Build results
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Rider
+.idea/
+*.sln.iml
+
+# Visual Studio Code
+.vscode/
+
+# NuGet
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+**/packages/*
+# except build/, which is used as an MSBuild target.
+!**/packages/build/
+
+# Excel temp files
+~$*
+
+# Test results
+TestResults/
+*.TestResults/
+
+# Others
+*.log
+*.vspscc
+*.vssscc
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Local history for JetBrains IDEs
+.localhistory/
+
+# Backup & report files from converting
+*.bak
+*.Report.xml
+
+# PDF output
+*.pdf 
