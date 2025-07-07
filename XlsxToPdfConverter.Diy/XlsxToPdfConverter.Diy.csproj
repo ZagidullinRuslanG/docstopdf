@@ -11,9 +11,6 @@
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="../NpoiHelpers/*.cs" />
-  </ItemGroup>
-  <ItemGroup>
     <Folder Include="Fonts" />
   </ItemGroup>
   <ItemGroup>
@@ -82,5 +79,7 @@
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
-
+  <ItemGroup>
+    <ProjectReference Include="..\NpoiHelpers\NpoiHelpers.csproj" />
+  </ItemGroup>
 </Project>

@@ -8,6 +8,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\XlsxToPdfConverter.Diy\XlsxToPdfConverter.Diy.csproj" />
-    <ProjectReference Include="..\.XlsxToPdfConverter\.XlsxToPdfConverter.csproj" />
+    <ProjectReference Include="..\DocxToPdfConverter\DocxToPdfConverter.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NPOI" Version="2.6.1" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XlsxToPdfConverter.Diy", "XlsxToPdfConverter.Diy\XlsxToPdfConverter.Diy.csproj", "{08AAD1EE-E755-4F22-A488-E80FE3A449AE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XlsxToPdfConverter.Diy.TestConsole", "XlsxToPdfConverter.Diy.TestConsole\XlsxToPdfConverter.Diy.TestConsole.csproj", "{78D121F7-A49A-46CE-B554-E41399925FBA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NpoiHelpers", "NpoiHelpers\NpoiHelpers.csproj", "{ED37A087-7808-4A48-87DF-F20D4B94C40E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocxToPdfConverter", "DocxToPdfConverter\DocxToPdfConverter.csproj", "{4CBA11D1-35C7-4D11-98D7-130CA23DB337}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{08AAD1EE-E755-4F22-A488-E80FE3A449AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08AAD1EE-E755-4F22-A488-E80FE3A449AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08AAD1EE-E755-4F22-A488-E80FE3A449AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08AAD1EE-E755-4F22-A488-E80FE3A449AE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{78D121F7-A49A-46CE-B554-E41399925FBA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{78D121F7-A49A-46CE-B554-E41399925FBA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{78D121F7-A49A-46CE-B554-E41399925FBA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{78D121F7-A49A-46CE-B554-E41399925FBA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ED37A087-7808-4A48-87DF-F20D4B94C40E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED37A087-7808-4A48-87DF-F20D4B94C40E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED37A087-7808-4A48-87DF-F20D4B94C40E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED37A087-7808-4A48-87DF-F20D4B94C40E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
