@@ -58,6 +58,19 @@ namespace XlsxToPdfConverter.Diy
                 throw new FileNotFoundException("No Fonts founded in bin/Fonts/ folder!");
             }
 
+            // Явное сопоставление для Times New Roman
+            if (familyName.Equals("Times New Roman", StringComparison.OrdinalIgnoreCase) ||
+                familyName.Equals("Times", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isBold && isItalic)
+                    return new FontResolverInfo("timesbi.ttf");
+                if (isBold)
+                    return new FontResolverInfo("timesbd.ttf");
+                if (isItalic)
+                    return new FontResolverInfo("timesi.ttf");
+                return new FontResolverInfo("times.ttf");
+            }
+
             FontFamilyModel fontFamilyModel;
             if (AvailableFonts.TryGetValue(familyName.ToLower(), out fontFamilyModel))
             {
@@ -103,7 +116,8 @@ namespace XlsxToPdfConverter.Diy
                 string path = "";
                 try
                 {
-                    path = availableFontFiles.First(x => x.ToLower().Contains(Path.GetFileName(faceFileName).ToLower()));
+                    path = availableFontFiles.First(x => 
+                        string.Equals(Path.GetFileName(x), faceFileName, StringComparison.OrdinalIgnoreCase));
                     using (Stream stream = File.OpenRead(path))
                     {
                         stream.CopyTo(destination);

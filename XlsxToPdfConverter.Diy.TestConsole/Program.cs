@@ -23,6 +23,8 @@ namespace XlsxToPdfConverter.Diy.TestConsole
                 }
                 foreach (string file in Directory.GetFiles(dir, "*.docx", SearchOption.TopDirectoryOnly))
                 {
+                    if (Path.GetFileName(file).StartsWith("~$"))
+                        continue; // пропускаем временные файлы Word
                     docxConverter.Convert(file, file + $".{jobId}.pdf");
                     Console.WriteLine($"DOCX to PDF: {file} -> {file}.{jobId}.pdf");
                 }
