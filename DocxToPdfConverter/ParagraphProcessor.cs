@@ -85,7 +85,6 @@ namespace DocxToPdfConverter
                             string base64 = Convert.ToBase64String(picData.Data);
                             string imgStr = "base64:" + base64;
                             // Логирование информации о картинке
-                            Console.WriteLine($"[Image] Type: {picData.SuggestFileExtension()}, Size: {picData.Data.Length} bytes, Base64: {base64.Substring(0, Math.Min(30, base64.Length))}...");
                             var image = mdPara.AddImage(imgStr);
                             image.LockAspectRatio = true;
                             image.Width = "5cm";
