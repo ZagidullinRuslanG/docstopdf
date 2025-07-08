@@ -1,14 +1,12 @@
-using System;
-using System.IO;
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Wordprocessing;
-using PdfSharp.Pdf;
 using PdfSharp.Drawing;
-using System.Linq;
+using NPOI.OpenXmlFormats.Wordprocessing;
 using PdfSharp.Fonts;
-using XlsxToPdfConverter.Diy;
-using DocumentFormat.OpenXml.Drawing;
-using System.Collections.Generic;
+using MigraDoc.DocumentObjectModel;
+using MigraDoc.Rendering;
+using NPOI.XWPF.UserModel;
+using Document = MigraDoc.DocumentObjectModel.Document;
+using ParagraphAlignment = NPOI.XWPF.UserModel.ParagraphAlignment;
+using System.Reflection;
 
 namespace DocxToPdfConverter
 {
@@ -16,616 +14,393 @@ namespace DocxToPdfConverter
     {
         static DocxToPdfConverter()
         {
-            GlobalFontSettings.FontResolver = new CustomFontResolver();
-        }
-
-        private class CellInfo
-        {
-            public DocumentFormat.OpenXml.Wordprocessing.TableCell Cell;
-            public int Row;
-            public int Col;
-            public int RowSpan = 1;
-            public int ColSpan = 1;
-            public bool IsMerged = false;
+            GlobalFontSettings.FontResolver = new MigraDocFontResolver();
         }
 
         public void Convert(string docxPath, string pdfPath)
         {
-            using (PdfDocument pdf = new PdfDocument())
+            var document = new Document();
+            var section = document.AddSection();
+
+            using (var stream = File.OpenRead(docxPath))
             {
-                PdfPage page = pdf.AddPage();
-                XGraphics gfx = XGraphics.FromPdfPage(page);
-                double y = 40;
-                double left = 40;
-                double right = page.Width - XUnit.FromPoint(40);
-                double lineHeight = 18;
-                using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(docxPath, false))
+                var doc = new XWPFDocument(stream);
+                foreach (var para in doc.Paragraphs)
                 {
-                    var body = wordDoc.MainDocumentPart.Document.Body;
-                    var numbering = wordDoc.MainDocumentPart.NumberingDefinitionsPart?.Numbering;
-                    // Найти первый параграф, если он styleId == "Title" или похожий, считать его заголовком таблицы
-                    var firstPara = body.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().FirstOrDefault();
-                    if (firstPara != null)
+                    var mdPara = section.AddParagraph();
+                    // Выравнивание
+                    switch (para.Alignment)
                     {
-                        string titleText = string.Concat(firstPara.Elements<DocumentFormat.OpenXml.Wordprocessing.Run>().Select(r => string.Concat(r.Elements<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text))));
-                        if (!string.IsNullOrWhiteSpace(titleText))
-                        {
-                            XFont titleFont = new XFont("Times New Roman", 16, XFontStyleEx.Italic);
-                            double maxWidth = right - left;
-                            int titleLines = EstimateLineCount(titleText, titleFont, maxWidth, gfx);
-                            double titleLineHeight = gfx.MeasureString("A", titleFont).Height;
-                            double titleHeight = titleLines * titleLineHeight + 8;
-                            var tf = new XTextFormatterEx2(gfx);
-                            tf.DrawString(titleText, titleFont, XBrushes.Black, new XRect(XUnit.FromPoint(left), XUnit.FromPoint(y), XUnit.FromPoint(maxWidth), XUnit.FromPoint(titleHeight)), XStringFormats.TopLeft);
-                            y += titleHeight + 8;
-                            // Удалить этот параграф из body, чтобы не рисовать его второй раз
-                            firstPara.Remove();
-                        }
+                        case ParagraphAlignment.CENTER:
+                            mdPara.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Center;
+                            break;
+                        case ParagraphAlignment.RIGHT:
+                            mdPara.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Right;
+                            break;
+                        case ParagraphAlignment.BOTH:
+                            mdPara.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Justify;
+                            break;
+                        default:
+                            mdPara.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Left;
+                            break;
                     }
-                    foreach (var element in body.Elements())
+                    // Отступы
+                    int ToIntSafe(object value)
                     {
-                        if (element is DocumentFormat.OpenXml.Wordprocessing.Paragraph para)
+                        if (value == null) return 0;
+                        if (value is int i) return i;
+                        if (value is long l) return (int)l;
+                        if (value is ulong ul) return (int)ul;
+                        if (value is string s && int.TryParse(s, out int result)) return result;
+                        return 0;
+                    }
+                    int GetSpacingAfterSafe(XWPFParagraph para)
+                    {
+                        var spacing = para.GetCTP()?.pPr?.spacing;
+                        return ToIntSafe(spacing?.after);
+                    }
+                    int GetSpacingBeforeSafe(XWPFParagraph para)
+                    {
+                        var spacing = para.GetCTP()?.pPr?.spacing;
+                        return ToIntSafe(spacing?.before);
+                    }
+                    int GetIndentationLeftSafe(XWPFParagraph para)
+                    {
+                        var ind = para.GetCTP()?.pPr?.ind;
+                        return ToIntSafe(ind?.left);
+                    }
+                    int GetIndentationRightSafe(XWPFParagraph para)
+                    {
+                        var ind = para.GetCTP()?.pPr?.ind;
+                        return ToIntSafe(ind?.right);
+                    }
+                    int indentationLeft = GetIndentationLeftSafe(para);
+                    int indentationRight = GetIndentationRightSafe(para);
+                    int spacingBefore = GetSpacingBeforeSafe(para);
+                    int spacingAfter = GetSpacingAfterSafe(para);
+                    if (indentationLeft > 0)
+                        mdPara.Format.LeftIndent = indentationLeft / 20.0;
+                    if (indentationRight > 0)
+                        mdPara.Format.RightIndent = indentationRight / 20.0;
+                    if (spacingBefore > 0)
+                        mdPara.Format.SpaceBefore = spacingBefore / 20.0;
+                    if (spacingAfter > 0)
+                        mdPara.Format.SpaceAfter = spacingAfter / 20.0;
+                    // Стилизация run'ов
+                    foreach (var run in para.Runs)
+                    {
+                        var mdText = mdPara.AddFormattedText(run.Text);
+                        if (run.IsBold) mdText.Bold = true;
+                        if (run.IsItalic) mdText.Italic = true;
+                        if (run.Underline != UnderlinePatterns.None) mdText.Underline = Underline.Single;
+                        if (run.FontSize > 0) mdText.Size = run.FontSize;
+                        if (!string.IsNullOrEmpty(run.FontFamily)) mdText.Font.Name = run.FontFamily;
+                        // Цвет
+                        var clr = run.GetCTR().rPr?.color?.val;
+                        if (!string.IsNullOrEmpty(clr) && clr.Length == 6)
                         {
-                            string styleId = para.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? "";
-                            double curLineHeight = GetLineHeightForStyle(styleId);
-                            double x = left;
-                            var indent = para.ParagraphProperties?.Indentation;
-                            double leftIndent = 0, rightIndent = 0, firstLineIndent = 0;
-                            if (indent != null)
+                            try
                             {
-                                if (indent.Left != null && double.TryParse(indent.Left.Value, out double l))
-                                    leftIndent = l / 20.0;
-                                if (indent.Right != null && double.TryParse(indent.Right.Value, out double r))
-                                    rightIndent = r / 20.0;
-                                if (indent.FirstLine != null && double.TryParse(indent.FirstLine.Value, out double f))
-                                    firstLineIndent = f / 20.0;
+                                int rr = System.Convert.ToInt32(clr.Substring(0, 2), 16);
+                                int gg = System.Convert.ToInt32(clr.Substring(2, 2), 16);
+                                int bb = System.Convert.ToInt32(clr.Substring(4, 2), 16);
+                                mdText.Color = MigraDoc.DocumentObjectModel.Color.FromRgb((byte)rr, (byte)gg, (byte)bb);
                             }
-                            int listLevel = 0;
-                            string marker = null;
-                            var numProp = para.ParagraphProperties?.NumberingProperties;
-                            if (numProp != null)
-                            {
-                                if (numProp.NumberingLevelReference?.Val != null)
-                                    listLevel = (int)numProp.NumberingLevelReference.Val.Value;
-                                marker = GetListMarker(numProp, numbering);
-                            }
-                            double listIndent = listLevel * 20;
-                            x += leftIndent + firstLineIndent + listIndent;
-                            double paragraphWidth = right - left - leftIndent - rightIndent - firstLineIndent - listIndent;
-                            var justification = para.ParagraphProperties?.Justification?.Val;
-                            XStringFormat stringFormat = XStringFormats.TopLeft;
-                            if (justification != null)
-                            {
-                                switch (justification.Value)
-                                {
-                                    case JustificationValues.Center:
-                                        stringFormat = XStringFormats.TopCenter;
-                                        break;
-                                    case JustificationValues.Right:
-                                        stringFormat = XStringFormats.TopRight;
-                                        break;
-                                    case JustificationValues.Both:
-                                        stringFormat = XStringFormats.TopLeft;
-                                        break;
-                                    default:
-                                        stringFormat = XStringFormats.TopLeft;
-                                        break;
-                                }
-                            }
-                            if (!string.IsNullOrEmpty(marker))
-                            {
-                                var markerFont = new XFont("Arial", 12, XFontStyleEx.Regular);
-                                gfx.DrawString(marker, markerFont, XBrushes.Black, new XRect(XUnit.FromPoint(x), XUnit.FromPoint(y), XUnit.FromPoint(30), XUnit.FromPoint(curLineHeight)), stringFormat);
-                                x += gfx.MeasureString(marker, markerFont).Width + 5;
-                            }
-                            // Обработка разрывов страниц
-                            bool pageBreak = false;
-                            foreach (var br in para.Descendants<DocumentFormat.OpenXml.Wordprocessing.Break>())
-                            {
-                                if (br.Type != null && br.Type.Value == DocumentFormat.OpenXml.Wordprocessing.BreakValues.Page)
-                                {
-                                    pageBreak = true;
-                                    break;
-                                }
-                            }
-                            if (pageBreak)
-                            {
-                                page = pdf.AddPage();
-                                gfx.Dispose();
-                                gfx = XGraphics.FromPdfPage(page);
-                                y = 40;
-                                continue;
-                            }
-                            foreach (var run in para.Elements<DocumentFormat.OpenXml.Wordprocessing.Run>())
-                            {
-                                string text = string.Concat(run.Elements<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text));
-                                if (string.IsNullOrEmpty(text)) continue;
-                                var runProps = run.RunProperties;
-                                XFontStyleEx style = XFontStyleEx.Regular;
-                                if (runProps != null)
-                                {
-                                    if (runProps.Bold != null) style |= XFontStyleEx.Bold;
-                                    if (runProps.Italic != null) style |= XFontStyleEx.Italic;
-                                    if (runProps.Underline != null) style |= XFontStyleEx.Underline;
-                                }
-                                double fontSize = 12;
-                                if (runProps?.FontSize?.Val != null)
-                                {
-                                    if (double.TryParse(runProps.FontSize.Val.Value, out double sz))
-                                        fontSize = sz / 2.0;
-                                }
-                                string fontName = runProps?.RunFonts?.Ascii?.Value ?? "Arial";
-                                var runFont = new XFont(fontName, fontSize, style);
-                                XBrush brush = XBrushes.Black;
-                                if (runProps?.Color?.Val != null)
-                                {
-                                    var color = runProps.Color.Val.Value;
-                                    if (color.Length == 6)
-                                    {
-                                        int r = System.Convert.ToInt32(color.Substring(0, 2), 16);
-                                        int g = System.Convert.ToInt32(color.Substring(2, 2), 16);
-                                        int b = System.Convert.ToInt32(color.Substring(4, 2), 16);
-                                        brush = new XSolidBrush(XColor.FromArgb(r, g, b));
-                                    }
-                                }
-                                gfx.DrawString(text, runFont, brush, new XRect(XUnit.FromPoint(x), XUnit.FromPoint(y), XUnit.FromPoint(paragraphWidth), XUnit.FromPoint(curLineHeight)), stringFormat);
-                                x += gfx.MeasureString(text, runFont).Width;
-                            }
-                            // Вставка изображений (Drawing)
-                            foreach (var drawing in para.Descendants<DocumentFormat.OpenXml.Wordprocessing.Drawing>())
-                            {
-                                var blip = drawing.Descendants<DocumentFormat.OpenXml.Drawing.Blip>().FirstOrDefault();
-                                if (blip != null)
-                                {
-                                    var relId = blip.Embed.Value;
-                                    var imgPart = (ImagePart)wordDoc.MainDocumentPart.GetPartById(relId);
-                                    using (var imgStream = imgPart.GetStream())
-                                    using (var ms = new MemoryStream())
-                                    {
-                                        imgStream.CopyTo(ms);
-                                        ms.Position = 0;
-                                        XImage ximg = XImage.FromStream(new MemoryStream(ms.ToArray()));
-                                        // Определяем размеры (по умолчанию 100x100pt)
-                                        double imgWidth = 100, imgHeight = 100;
-                                        var ext = drawing.Descendants<DocumentFormat.OpenXml.Drawing.Extents>().FirstOrDefault();
-                                        if (ext != null)
-                                        {
-                                            imgWidth = ext.Cx / 12700.0; // EMU to pt
-                                            imgHeight = ext.Cy / 12700.0;
-                                        }
-                                        gfx.DrawImage(ximg, XUnit.FromPoint(x), XUnit.FromPoint(y), XUnit.FromPoint(imgWidth), XUnit.FromPoint(imgHeight));
-                                        y += imgHeight + 5; // перенос строки после картинки
-                                    }
-                                }
-                            }
-                            y += curLineHeight;
-                            if (y > page.Height - XUnit.FromPoint(40))
-                            {
-                                page = pdf.AddPage();
-                                gfx.Dispose();
-                                gfx = XGraphics.FromPdfPage(page);
-                                y = 40;
-                            }
-                        }
-                        else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
-                        {
-                            y = DrawTable(table, gfx, left, y, right - left, wordDoc);
-                            if (y > page.Height - XUnit.FromPoint(40))
-                            {
-                                page = pdf.AddPage();
-                                gfx.Dispose();
-                                gfx = XGraphics.FromPdfPage(page);
-                                y = 40;
-                            }
+                            catch { }
                         }
                     }
                 }
-                gfx.Dispose();
-                pdf.Save(pdfPath);
             }
+            var pdfRenderer = new PdfDocumentRenderer(true);
+            pdfRenderer.Document = document;
+            pdfRenderer.RenderDocument();
+            pdfRenderer.Save(pdfPath);
         }
 
-        private string GetListMarker(NumberingProperties numProp, Numbering numbering)
+        // Заготовка для отрисовки таблицы через NPOI
+        private void DrawTableNpoi(XWPFTable table, XGraphics gfx, double left, ref double y, double tableWidth)
         {
-            if (numProp.NumberingId == null) return null;
-            string marker = "• ";
-            if (numbering != null && numProp.NumberingId != null)
+            int rowCount = table.NumberOfRows;
+            if (rowCount == 0) return;
+            int colCount = table.Rows[0].GetTableCells().Count;
+            if (colCount == 0) return;
+            double[] colWidths = new double[colCount];
+            double totalWidth = 0;
+            for (int c = 0; c < colCount; c++)
             {
-                var numId = numProp.NumberingId.Val.Value;
-                var abstractNumId = numbering.Elements<NumberingInstance>()
-                    .FirstOrDefault(n => n.NumberID.Value == numId)?
-                    .AbstractNumId?.Val?.Value;
-                if (abstractNumId != null)
+                var tcW = table.Rows[0].GetCell(c)?.GetCTTc().tcPr?.tcW;
+                if (tcW != null && int.TryParse(tcW.w, out int w) && w > 0)
                 {
-                    var abstractNum = numbering.Elements<DocumentFormat.OpenXml.Wordprocessing.AbstractNum>()
-                        .FirstOrDefault(n => n.AbstractNumberId.Value == abstractNumId);
-                    if (abstractNum != null)
-                    {
-                        var lvl = abstractNum.Elements<Level>().FirstOrDefault();
-                        if (lvl != null && lvl.NumberingFormat != null)
-                        {
-                            if (lvl.NumberingFormat.Val == NumberFormatValues.Bullet)
-                                marker = "• ";
-                            else if (lvl.NumberingFormat.Val == NumberFormatValues.Decimal)
-                                marker = "1. ";
-                        }
-                    }
-                }
-            }
-            return marker;
-        }
-
-        private double DrawTable(DocumentFormat.OpenXml.Wordprocessing.Table table, XGraphics gfx, double left, double y, double tableWidth, WordprocessingDocument wordDoc)
-        {
-            double cellPadding = 4;
-            // Строим виртуальную матрицу ячеек
-            var rows = table.Elements<DocumentFormat.OpenXml.Wordprocessing.TableRow>().ToList();
-            int rowCount = rows.Count;
-            int colCount = 0;
-            foreach (var row in rows)
-            {
-                int count = 0;
-                foreach (var cell in row.Elements<DocumentFormat.OpenXml.Wordprocessing.TableCell>())
-                {
-                    int gridSpan = cell.TableCellProperties?.GridSpan?.Val != null ? (int)cell.TableCellProperties.GridSpan.Val : 1;
-                    count += gridSpan;
-                }
-                if (count > colCount) colCount = count;
-            }
-            CellInfo[,] cellMatrix = new CellInfo[rowCount, colCount];
-            for (int row = 0; row < rowCount; row++)
-            {
-                int col = 0;
-                foreach (var cell in rows[row].Elements<DocumentFormat.OpenXml.Wordprocessing.TableCell>())
-                {
-                    // Пропустить уже занятые позиции (поглощённые)
-                    while (col < colCount && cellMatrix[row, col] != null) col++;
-                    int colspan = cell.TableCellProperties?.GridSpan?.Val != null ? (int)cell.TableCellProperties.GridSpan.Val : 1;
-                    // Определяем rowspan (VerticalMerge)
-                    int rowspan = 1;
-                    var vMerge = cell.TableCellProperties?.VerticalMerge;
-                    if (vMerge != null && vMerge.Val != null && vMerge.Val.Value == DocumentFormat.OpenXml.Wordprocessing.MergedCellValues.Restart)
-                    {
-                        for (int r = row + 1; r < rowCount; r++)
-                        {
-                            var nextRowCells = rows[r].Elements<DocumentFormat.OpenXml.Wordprocessing.TableCell>().ToList();
-                            int nextColIdx = 0;
-                            foreach (var nextCell in nextRowCells)
-                            {
-                                int nextGridSpan = nextCell.TableCellProperties?.GridSpan?.Val != null ? (int)nextCell.TableCellProperties.GridSpan.Val : 1;
-                                if (nextColIdx == col)
-                                {
-                                    var nextVMerge = nextCell.TableCellProperties?.VerticalMerge;
-                                    if (nextVMerge != null && nextVMerge.Val == null)
-                                    {
-                                        rowspan++;
-                                    }
-                                    else
-                                    {
-                                        break;
-                                    }
-                                    break;
-                                }
-                                nextColIdx += nextGridSpan;
-                            }
-                        }
-                    }
-                    for (int dr = 0; dr < rowspan; dr++)
-                    {
-                        for (int dc = 0; dc < colspan; dc++)
-                        {
-                            if ((row + dr) >= rowCount || (col + dc) >= colCount)
-                                continue; // Не выходить за пределы массива
-                            cellMatrix[row + dr, col + dc] = new CellInfo
-                            {
-                                Cell = cell,
-                                Row = row,
-                                Col = col,
-                                RowSpan = rowspan,
-                                ColSpan = colspan,
-                                IsMerged = !(dr == 0 && dc == 0)
-                            };
-                        }
-                    }
-                    col += colspan;
-                }
-            }
-            double cellWidth = tableWidth / colCount;
-            double curY = y;
-            XFont defaultFont = new XFont("Arial", 12, XFontStyleEx.Regular);
-            double[] rowHeights = new double[rowCount];
-            for (int row = 0; row < rowCount; row++)
-            {
-                double maxCellHeight = 0;
-                for (int col = 0; col < colCount; col++)
-                {
-                    if (cellMatrix[row, col] == null || cellMatrix[row, col].IsMerged) continue;
-                    var cell = cellMatrix[row, col].Cell;
-                    int colspan = cellMatrix[row, col].ColSpan;
-                    double availableWidth = cellWidth * colspan - 2 * cellPadding;
-                    double cellTextHeight = 0;
-                    foreach (var para in cell.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>())
-                    {
-                        foreach (var run in para.Elements<DocumentFormat.OpenXml.Wordprocessing.Run>())
-                        {
-                            string text = string.Concat(run.Elements<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text));
-                            if (string.IsNullOrEmpty(text)) continue;
-                            DocumentFormat.OpenXml.Wordprocessing.RunProperties runProps = run.RunProperties;
-                            XFontStyleEx style = XFontStyleEx.Regular;
-                            if (runProps != null)
-                            {
-                                if (runProps.Bold != null) style |= XFontStyleEx.Bold;
-                                if (runProps.Italic != null) style |= XFontStyleEx.Italic;
-                                if (runProps.Underline != null) style |= XFontStyleEx.Underline;
-                            }
-                            double fontSize = 12;
-                            if (runProps?.FontSize?.Val != null)
-                            {
-                                if (double.TryParse(runProps.FontSize.Val.Value, out double sz))
-                                    fontSize = sz / 2.0;
-                            }
-                            string fontName = runProps?.RunFonts?.Ascii?.Value ?? "Arial";
-                            var runFont = new XFont(fontName, fontSize, style);
-                            var words = text.Split(' ');
-                            string currentLine = "";
-                            foreach (var word in words)
-                            {
-                                string testLine = string.IsNullOrEmpty(currentLine) ? word : currentLine + " " + word;
-                                var size = gfx.MeasureString(testLine, runFont);
-                                if (size.Width > availableWidth)
-                                {
-                                    if (!string.IsNullOrEmpty(currentLine))
-                                        cellTextHeight += gfx.MeasureString(currentLine, runFont).Height;
-                                    currentLine = word;
-                                }
-                                else
-                                {
-                                    currentLine = testLine;
-                                }
-                            }
-                            if (!string.IsNullOrEmpty(currentLine))
-                                cellTextHeight += gfx.MeasureString(currentLine, runFont).Height;
-                        }
-                        cellTextHeight += gfx.MeasureString("A", new XFont("Arial", 12)).Height * 0.5;
-                    }
-                    cellTextHeight += 2 * cellPadding;
-                    if (cellTextHeight > maxCellHeight) maxCellHeight = cellTextHeight;
-                }
-                rowHeights[row] = maxCellHeight > 0 ? maxCellHeight : 18;
-            }
-            for (int row = 0; row < rowCount; row++)
-            {
-                double x = left;
-                for (int col = 0; col < colCount; col++)
-                {
-                    var info = cellMatrix[row, col];
-                    if (info == null || info.IsMerged) continue;
-                    var cell = info.Cell;
-                    int colspan = info.ColSpan;
-                    int rowspan = info.RowSpan;
-                    double availableWidth = cellWidth * colspan - 2 * cellPadding;
-                    // Высота объединённой ячейки — сумма rowHeights по covered строкам
-                    double cellHeight = 0;
-                    for (int r = row; r < row + rowspan; r++)
-                        cellHeight += rowHeights[r];
-                    // Получаем параметры границ
-                    var borders = cell.TableCellProperties?.TableCellBorders;
-                    XPen penTop = GetCellBorderPen(borders?.TopBorder);
-                    XPen penBottom = GetCellBorderPen(borders?.BottomBorder);
-                    XPen penLeft = GetCellBorderPen(borders?.LeftBorder);
-                    XPen penRight = GetCellBorderPen(borders?.RightBorder);
-                    // Рисуем каждую сторону отдельно
-                    gfx.DrawLine(penTop, XUnit.FromPoint(x), XUnit.FromPoint(curY), XUnit.FromPoint(x + cellWidth * colspan), XUnit.FromPoint(curY));
-                    gfx.DrawLine(penBottom, XUnit.FromPoint(x), XUnit.FromPoint(curY + cellHeight), XUnit.FromPoint(x + cellWidth * colspan), XUnit.FromPoint(curY + cellHeight));
-                    gfx.DrawLine(penLeft, XUnit.FromPoint(x), XUnit.FromPoint(curY), XUnit.FromPoint(x), XUnit.FromPoint(curY + cellHeight));
-                    gfx.DrawLine(penRight, XUnit.FromPoint(x + cellWidth * colspan), XUnit.FromPoint(curY), XUnit.FromPoint(x + cellWidth * colspan), XUnit.FromPoint(curY + cellHeight));
-                    // Определяем выравнивание
-                    var vAlign = cell.TableCellProperties?.TableCellVerticalAlignment?.Val;
-                    XStringFormat stringFormat = XStringFormats.TopLeft;
-                    if (vAlign != null)
-                    {
-                        switch (vAlign.Value)
-                        {
-                            case DocumentFormat.OpenXml.Wordprocessing.TableVerticalAlignmentValues.Center:
-                                stringFormat = XStringFormats.CenterLeft;
-                                break;
-                            case DocumentFormat.OpenXml.Wordprocessing.TableVerticalAlignmentValues.Bottom:
-                                stringFormat = XStringFormats.BottomLeft;
-                                break;
-                            default:
-                                stringFormat = XStringFormats.TopLeft;
-                                break;
-                        }
-                    }
-                    // Горизонтальное выравнивание по первому параграфу
-                    var para = cell.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().FirstOrDefault();
-                    if (para != null)
-                    {
-                        var justification = para.ParagraphProperties?.Justification?.Val;
-                        if (justification != null)
-                        {
-                            switch (justification.Value)
-                            {
-                                case DocumentFormat.OpenXml.Wordprocessing.JustificationValues.Center:
-                                    stringFormat = XStringFormats.TopCenter;
-                                    break;
-                                case DocumentFormat.OpenXml.Wordprocessing.JustificationValues.Right:
-                                    stringFormat = XStringFormats.TopRight;
-                                    break;
-                                default:
-                                    break;
-                            }
-                        }
-                    }
-                    // Рисуем содержимое ячейки (текст, вложенные таблицы, картинки)
-                    double textX = x + cellPadding;
-                    double textY = curY + cellPadding;
-                    foreach (var element in cell.Elements())
-                    {
-                        if (element is DocumentFormat.OpenXml.Wordprocessing.Paragraph p)
-                        {
-                            foreach (var run in p.Elements<DocumentFormat.OpenXml.Wordprocessing.Run>())
-                            {
-                                string text = string.Concat(run.Elements<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(t => t.Text));
-                                if (string.IsNullOrEmpty(text)) continue;
-                                DocumentFormat.OpenXml.Wordprocessing.RunProperties runProps = run.RunProperties;
-                                XFontStyleEx style = XFontStyleEx.Regular;
-                                if (runProps != null)
-                                {
-                                    if (runProps.Bold != null) style |= XFontStyleEx.Bold;
-                                    if (runProps.Italic != null) style |= XFontStyleEx.Italic;
-                                    if (runProps.Underline != null) style |= XFontStyleEx.Underline;
-                                }
-                                double fontSize = 12;
-                                if (runProps?.FontSize?.Val != null)
-                                {
-                                    if (double.TryParse(runProps.FontSize.Val.Value, out double sz))
-                                        fontSize = sz / 2.0;
-                                }
-                                string fontName = runProps?.RunFonts?.Ascii?.Value ?? "Arial";
-                                var runFont = new XFont(fontName, fontSize, style);
-                                XBrush brush = XBrushes.Black;
-                                if (runProps?.Color?.Val != null)
-                                {
-                                    var color = runProps.Color.Val.Value;
-                                    if (color.Length == 6)
-                                    {
-                                        int r = System.Convert.ToInt32(color.Substring(0, 2), 16);
-                                        int g = System.Convert.ToInt32(color.Substring(2, 2), 16);
-                                        int b = System.Convert.ToInt32(color.Substring(4, 2), 16);
-                                        brush = new XSolidBrush(XColor.FromArgb(r, g, b));
-                                    }
-                                }
-                                gfx.DrawString(text, runFont, brush, new XRect(XUnit.FromPoint(textX), XUnit.FromPoint(textY), XUnit.FromPoint(availableWidth), XUnit.FromPoint(cellHeight - 2 * cellPadding)), stringFormat);
-                                textY += gfx.MeasureString(text, runFont).Height;
-                            }
-                            // Вставка изображений (Drawing) внутри параграфа
-                            foreach (var drawing in p.Descendants<DocumentFormat.OpenXml.Wordprocessing.Drawing>())
-                            {
-                                var blip = drawing.Descendants<DocumentFormat.OpenXml.Drawing.Blip>().FirstOrDefault();
-                                if (blip != null)
-                                {
-                                    var relId = blip.Embed.Value;
-                                    var imgPart = (ImagePart)wordDoc.MainDocumentPart.GetPartById(relId);
-                                    using (var imgStream = imgPart.GetStream())
-                                    using (var ms = new MemoryStream())
-                                    {
-                                        imgStream.CopyTo(ms);
-                                        ms.Position = 0;
-                                        XImage ximg = XImage.FromStream(new MemoryStream(ms.ToArray()));
-                                        double imgWidth = 100, imgHeight = 100;
-                                        var ext = drawing.Descendants<DocumentFormat.OpenXml.Drawing.Extents>().FirstOrDefault();
-                                        if (ext != null)
-                                        {
-                                            imgWidth = ext.Cx / 12700.0;
-                                            imgHeight = ext.Cy / 12700.0;
-                                        }
-                                        gfx.DrawImage(ximg, XUnit.FromPoint(textX), XUnit.FromPoint(textY), XUnit.FromPoint(imgWidth), XUnit.FromPoint(imgHeight));
-                                        textY += imgHeight + 5;
-                                    }
-                                }
-                            }
-                        }
-                        else if (element is DocumentFormat.OpenXml.Wordprocessing.Table nestedTable)
-                        {
-                            // Вложенная таблица
-                            textY = DrawTable(nestedTable, gfx, textX, textY, availableWidth, wordDoc);
-                        }
-                    }
-                    x += cellWidth * colspan;
-                }
-                curY += rowHeights[row];
-            }
-            return curY + 8;
-        }
-
-        private XFont GetFontForStyle(string styleId)
-        {
-            if (styleId == "Heading1") return new XFont("Arial", 20, XFontStyleEx.Bold);
-            if (styleId == "Heading2") return new XFont("Arial", 16, XFontStyleEx.Bold);
-            if (styleId == "Heading3") return new XFont("Arial", 14, XFontStyleEx.Bold);
-            return new XFont("Arial", 12, XFontStyleEx.Regular);
-        }
-        private double GetLineHeightForStyle(string styleId)
-        {
-            if (styleId == "Heading1") return 28;
-            if (styleId == "Heading2") return 22;
-            if (styleId == "Heading3") return 18;
-            return 16;
-        }
-        private XFont GetFontForRun(XFont baseFont, DocumentFormat.OpenXml.Wordprocessing.RunProperties runProps)
-        {
-            XFontStyleEx style = XFontStyleEx.Regular;
-            if (runProps != null)
-            {
-                if (runProps.Bold != null) style |= XFontStyleEx.Bold;
-                if (runProps.Italic != null) style |= XFontStyleEx.Italic;
-                if (runProps.Underline != null) style |= XFontStyleEx.Underline;
-            }
-            return new XFont(baseFont.FontFamily.Name, baseFont.Size, style);
-        }
-
-        // Функция для word wrap и подсчёта строк:
-        int EstimateLineCount(string text, XFont font, double maxWidth, XGraphics gfx)
-        {
-            if (string.IsNullOrEmpty(text)) return 1;
-            var words = text.Split(' ');
-            int lines = 1;
-            string currentLine = "";
-            foreach (var word in words)
-            {
-                string testLine = string.IsNullOrEmpty(currentLine) ? word : currentLine + " " + word;
-                var size = gfx.MeasureString(testLine, font);
-                if (size.Width > maxWidth)
-                {
-                    lines++;
-                    currentLine = word;
+                    colWidths[c] = w / 20.0; // docx: twentieths of a point
                 }
                 else
                 {
-                    currentLine = testLine;
+                    colWidths[c] = tableWidth / colCount;
                 }
+                totalWidth += colWidths[c];
             }
-            return lines;
+            // Нормализация ширины
+            for (int c = 0; c < colCount; c++)
+                colWidths[c] = colWidths[c] / totalWidth * tableWidth;
+            XFont defaultFont = new XFont("Arial", 12);
+            bool[,] occupied = new bool[rowCount, colCount];
+            // Считаем высоту каждой строки по максимальному количеству строк в ячейках
+            double[] rowHeights = new double[rowCount];
+            for (int r = 0; r < rowCount; r++)
+            {
+                double maxLines = 1;
+                var row = table.Rows[r];
+                for (int c = 0; c < colCount; c++)
+                {
+                    var cell = row.GetCell(c);
+                    if (cell == null) continue;
+                    int lines = 0;
+                    foreach (var para in cell.Paragraphs)
+                    {
+                        var paraLines = (para.Text ?? "").Split('\n');
+                        lines += Math.Max(paraLines.Length, 1);
+                    }
+                    if (lines > maxLines) maxLines = lines;
+                }
+                rowHeights[r] = maxLines * defaultFont.Height + 4;
+            }
+            double yPos = y;
+            for (int r = 0; r < rowCount; r++)
+            {
+                var row = table.Rows[r];
+                double x = left;
+                for (int c = 0; c < colCount; c++)
+                {
+                    if (occupied[r, c]) { x += colWidths[c]; continue; }
+                    var cell = row.GetCell(c);
+                    if (cell == null) { x += colWidths[c]; continue; }
+                    int colspan = 1;
+                    int rowspan = 1;
+                    var gridSpan = cell.GetCTTc().tcPr?.gridSpan;
+                    if (gridSpan != null && int.TryParse(gridSpan.val, out int gs) && gs > 1)
+                        colspan = gs;
+                    var vMerge = cell.GetCTTc().tcPr?.vMerge;
+                    if (vMerge != null && vMerge.val == ST_Merge.@continue)
+                    {
+                        x += colWidths[c];
+                        continue;
+                    }
+                    double mergedWidth = colWidths[c] * colspan;
+                    double mergedHeight = 0;
+                    for (int dr = 0; dr < rowspan; dr++)
+                        if (r + dr < rowCount)
+                            mergedHeight += rowHeights[r + dr];
+                    for (int dr = 0; dr < rowspan; dr++)
+                        for (int dc = 0; dc < colspan; dc++)
+                            if (r + dr < rowCount && c + dc < colCount)
+                                occupied[r + dr, c + dc] = true;
+                    var shd = cell.GetCTTc().tcPr?.shd;
+                    if (shd != null && !string.IsNullOrEmpty(shd.fill) && shd.fill != "auto")
+                    {
+                        try
+                        {
+                            int rCol = System.Convert.ToInt32(shd.fill.Substring(0, 2), 16);
+                            int gCol = System.Convert.ToInt32(shd.fill.Substring(2, 2), 16);
+                            int bCol = System.Convert.ToInt32(shd.fill.Substring(4, 2), 16);
+                            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(rCol, gCol, bCol)), x, yPos, mergedWidth, mergedHeight);
+                        }
+                        catch { }
+                    }
+                    gfx.DrawRectangle(XPens.Black, x, yPos, mergedWidth, mergedHeight);
+                    double textY = yPos + 2;
+                    foreach (var para in cell.Paragraphs)
+                    {
+                        foreach (var run in para.Runs)
+                        {
+                            string[] lines = (run.Text ?? "").Split('\n');
+                            // Определяем стиль для XFont
+                            XFont font;
+                            if (run.IsBold)
+                                font = new XFont("Arial", 12, XFontStyleEx.Bold);
+                            else if (run.IsItalic)
+                                font = new XFont("Arial", 12, XFontStyleEx.Italic);
+                            else
+                                font = new XFont("Arial", 12, XFontStyleEx.Regular);
+                            XBrush brush = XBrushes.Black;
+                            if (run.GetCTR().rPr?.color != null && !string.IsNullOrEmpty(run.GetCTR().rPr.color.val))
+                            {
+                                var clr = run.GetCTR().rPr.color.val;
+                                if (clr.Length == 6)
+                                {
+                                    try
+                                    {
+                                        int rr = System.Convert.ToInt32(clr.Substring(0, 2), 16);
+                                        int gg = System.Convert.ToInt32(clr.Substring(2, 2), 16);
+                                        int bb = System.Convert.ToInt32(clr.Substring(4, 2), 16);
+                                        brush = new XSolidBrush(XColor.FromArgb(rr, gg, bb));
+                                    }
+                                    catch { }
+                                }
+                            }
+                            foreach (var line in lines)
+                            {
+                                // Автоматический перенос текста по ширине ячейки
+                                var rect = new XRect(x + 2, textY, mergedWidth - 4, font.Height * 2);
+                                var format = new XStringFormat { LineAlignment = XLineAlignment.Near };
+                                var tf = new PdfSharp.Drawing.Layout.XTextFormatter(gfx);
+                                // Определяем выравнивание
+                                var align = para.Alignment;
+                                switch (align)
+                                {
+                                    case ParagraphAlignment.CENTER:
+                                        tf.Alignment = PdfSharp.Drawing.Layout.XParagraphAlignment.Center;
+                                        break;
+                                    case ParagraphAlignment.RIGHT:
+                                        tf.Alignment = PdfSharp.Drawing.Layout.XParagraphAlignment.Right;
+                                        break;
+                                    default:
+                                        tf.Alignment = PdfSharp.Drawing.Layout.XParagraphAlignment.Left;
+                                        break;
+                                }
+                                tf.DrawString(line, font, brush, rect, format);
+                                textY += font.Height;
+                            }
+                            // Вставка картинок из run
+                            foreach (var pic in run.GetEmbeddedPictures())
+                            {
+                                var imgData = pic.GetPictureData();
+                                if (imgData != null)
+                                {
+                                    using (var ms = new System.IO.MemoryStream(imgData.Data))
+                                    {
+                                        try
+                                        {
+                                            var ximg = XImage.FromStream(ms);
+                                            double imgW = Math.Min(ximg.PixelWidth * 0.75, mergedWidth - 4);
+                                            double imgH = ximg.PixelHeight * 0.75;
+                                            gfx.DrawImage(ximg, x + 2, textY, imgW, imgH);
+                                            textY += imgH + 2;
+                                        }
+                                        catch { }
+                                    }
+                                }
+                            }
+                            // Вложенные таблицы
+                            foreach (var bodyElem in cell.BodyElements)
+                            {
+                                if (bodyElem is XWPFTable nestedTable)
+                                {
+                                    double nestedY = textY;
+                                    DrawTableNpoi(nestedTable, gfx, x + 2, ref nestedY, mergedWidth - 4);
+                                    textY = nestedY;
+                                }
+                            }
+                        }
+                    }
+                    x += mergedWidth;
+                }
+                yPos += rowHeights[r];
+            }
+            y = yPos;
+        }
+        // Заготовка для отрисовки картинки через NPOI
+        private void DrawPictureNpoi(XWPFPictureData pic, XGraphics gfx, double left, ref double y)
+        {
+            // TODO: реализовать отрисовку картинки через NPOI
+        }
+    }
+
+    public class MigraDocFontResolver : IFontResolver
+    {
+        private static readonly string FontsFolder = "/Users/ruslanzagidullin/source/docstopdf/XlsxToPdfConverter.Diy/Fonts";
+
+        public byte[] GetFont(string faceName)
+        {
+            string fontFile = null;
+            string lowerFace = faceName.Trim().ToLowerInvariant();
+            if (lowerFace.StartsWith("courier new"))
+            {
+                if (lowerFace.Contains("bi")) fontFile = "courbi.ttf";
+                else if (lowerFace.Contains("b")) fontFile = "courbd.ttf";
+                else if (lowerFace.Contains("i")) fontFile = "couri.ttf";
+                else fontFile = "cour.ttf";
+            }
+            else
+            {
+                fontFile = faceName switch
+                {
+                    "Arial#" => "arial.ttf",
+                    "Arial#b" => "arialbd.ttf",
+                    "Arial#i" => "ariali.ttf",
+                    "Arial#bi" => "arialbi.ttf",
+                    "ArialN#" => "ARIALN.TTF",
+                    "ArialN#b" => "ARIALNB.TTF",
+                    "ArialN#i" => "ARIALNI.TTF",
+                    "ArialN#bi" => "ARIALNBI.TTF",
+                    "Times#" => "times.ttf",
+                    "Times#b" => "timesbd.ttf",
+                    "Times#i" => "timesi.ttf",
+                    "Times#bi" => "timesbi.ttf",
+                    "Calibri#" => "calibri.ttf",
+                    "Calibri#b" => "calibrib.ttf",
+                    "Calibri#i" => "calibrii.ttf",
+                    "Calibri#bi" => "calibriz.ttf",
+                    "CambriaMath#" => "CambriaMath.ttf",
+                    "ArialBlk#" => "ariblk.ttf",
+                    "Courier#" => "cour.ttf",
+                    "Courier#b" => "courbd.ttf",
+                    "Courier#i" => "couri.ttf",
+                    "Courier#bi" => "courbi.ttf",
+                    _ => "arial.ttf"
+                };
+            }
+            string path = Path.Combine(FontsFolder, fontFile);
+            return File.ReadAllBytes(path);
         }
 
-        // Вспомогательная функция для получения XPen по границе ячейки
-        private XPen GetCellBorderPen(DocumentFormat.OpenXml.Wordprocessing.BorderType border)
+        public FontResolverInfo ResolveTypeface(string familyName, bool isBold, bool isItalic)
         {
-            if (border == null || border.Val == null || border.Val.Value == DocumentFormat.OpenXml.Wordprocessing.BorderValues.Nil)
-                return XPens.Transparent;
-            double width = 1.0;
-            if (border.Size != null)
-                width = (double)border.Size.Value / 8.0; // OpenXML size в 1/8 pt
-            XColor color = XColors.Black;
-            if (border.Color != null && border.Color.Value != "auto")
+            string key = familyName.ToLowerInvariant();
+            if (key.Contains("arial"))
             {
-                var c = border.Color.Value;
-                if (c.Length == 6)
-                {
-                    int r = System.Convert.ToInt32(c.Substring(0, 2), 16);
-                    int g = System.Convert.ToInt32(c.Substring(2, 2), 16);
-                    int b = System.Convert.ToInt32(c.Substring(4, 2), 16);
-                    color = XColor.FromArgb(r, g, b);
-                }
+                if (isBold && isItalic) return new FontResolverInfo("Arial#bi");
+                if (isBold) return new FontResolverInfo("Arial#b");
+                if (isItalic) return new FontResolverInfo("Arial#i");
+                return new FontResolverInfo("Arial#");
             }
-            XPen pen = new XPen(color, width);
-            if (border.Val != null)
+            if (key.Contains("arialn"))
             {
-                switch (border.Val.Value)
-                {
-                    case DocumentFormat.OpenXml.Wordprocessing.BorderValues.Dotted:
-                        pen.DashStyle = XDashStyle.Dot;
-                        break;
-                    case DocumentFormat.OpenXml.Wordprocessing.BorderValues.Dashed:
-                        pen.DashStyle = XDashStyle.Dash;
-                        break;
-                    default:
-                        pen.DashStyle = XDashStyle.Solid;
-                        break;
-                }
+                if (isBold && isItalic) return new FontResolverInfo("ArialN#bi");
+                if (isBold) return new FontResolverInfo("ArialN#b");
+                if (isItalic) return new FontResolverInfo("ArialN#i");
+                return new FontResolverInfo("ArialN#");
             }
-            return pen;
+            if (key.Contains("times"))
+            {
+                if (isBold && isItalic) return new FontResolverInfo("Times#bi");
+                if (isBold) return new FontResolverInfo("Times#b");
+                if (isItalic) return new FontResolverInfo("Times#i");
+                return new FontResolverInfo("Times#");
+            }
+            if (key.Contains("calibri"))
+            {
+                if (isBold && isItalic) return new FontResolverInfo("Calibri#bi");
+                if (isBold) return new FontResolverInfo("Calibri#b");
+                if (isItalic) return new FontResolverInfo("Calibri#i");
+                return new FontResolverInfo("Calibri#");
+            }
+            if (key.Contains("cambriamath"))
+            {
+                return new FontResolverInfo("CambriaMath#");
+            }
+            if (key.Contains("ariblk"))
+            {
+                return new FontResolverInfo("ArialBlk#");
+            }
+            if (key.Contains("courier new") || key.Contains("courier"))
+            {
+                if (isBold && isItalic) return new FontResolverInfo("Courier New#bi");
+                if (isBold) return new FontResolverInfo("Courier New#b");
+                if (isItalic) return new FontResolverInfo("Courier New#i");
+                return new FontResolverInfo("Courier New#");
+            }
+            // fallback
+            return new FontResolverInfo("Arial#");
         }
     }
 } 
