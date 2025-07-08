@@ -1,5 +1,4 @@
 using PdfSharp.Fonts;
-using System.IO;
 
 namespace DocxToPdfConverter
 {

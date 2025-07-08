@@ -1,13 +1,7 @@
-using PdfSharp.Drawing;
-using NPOI.OpenXmlFormats.Wordprocessing;
 using PdfSharp.Fonts;
-using MigraDoc.DocumentObjectModel;
 using MigraDoc.Rendering;
 using NPOI.XWPF.UserModel;
 using Document = MigraDoc.DocumentObjectModel.Document;
-using ParagraphAlignment = NPOI.XWPF.UserModel.ParagraphAlignment;
-using System.Reflection;
-using MigraDoc.DocumentObjectModel.Tables;
 
 namespace DocxToPdfConverter
 {
