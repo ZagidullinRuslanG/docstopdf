@@ -6,12 +6,35 @@ namespace DocxToPdfConverter
 {
     public static class TableProcessor
     {
-        public static void ProcessTable(XWPFTable table, Section section)
+        public static void ProcessTable(XWPFTable table, DocumentObject docObj)
         {
-            if (table == null || table.Rows == null || table.Rows.Count == 0 || table.Rows[0] == null)
+            if (table?.Rows == null || table.Rows.Count == 0 || table.Rows[0] == null)
                 return;
-            var mdTable = section.AddTable();
-            mdTable.Borders.Visible = true;
+
+            Table mdTable;
+            PageSetup pageSetup;
+
+            switch (docObj)
+            {
+                case Section section:
+                {
+                    mdTable = section.AddTable();
+                    pageSetup = section.PageSetup;
+                    break;
+                }
+                case HeaderFooter footer:
+                    mdTable = footer.AddTable();
+                    pageSetup = footer.Section!.PageSetup;
+                    break;
+                default:
+                    return;
+            }
+
+            //однозначного соответствия в адресации дефолтных границ нет, поэтому по умолчанию ставим в таблицу
+            //visible в случае, когда в исходной таблице хотя бы где-то видимость по умолчанию
+            mdTable.Borders.Visible = table.InsideHBorderType != XWPFTable.XWPFBorderType.NONE
+                || table.InsideVBorderType != XWPFTable.XWPFBorderType.NONE;
+
             mdTable.Rows.Alignment = RowAlignment.Left;
             mdTable.Rows.LeftIndent = Unit.Zero;
             int colCount = table.Rows[0].GetTableCells().Count;
@@ -63,7 +86,7 @@ namespace DocxToPdfConverter
                     colWidthsPt.Add(w);
                 }
                 // 2. Если сумма меньше ширины страницы — распределяем остаток пропорционально длине текста
-                var pageWidthPt = (section.PageSetup.PageWidth - section.PageSetup.LeftMargin - section.PageSetup.RightMargin).Point;
+                var pageWidthPt = (pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin).Point;
                 double totalWidthPt = colWidthsPt.Sum();
                 if (totalWidthPt < pageWidthPt && totalLen > 0)
                 {

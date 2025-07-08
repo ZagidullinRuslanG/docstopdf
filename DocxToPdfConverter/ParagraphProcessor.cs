@@ -1,16 +1,46 @@
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
+using NPOI.OpenXmlFormats.Wordprocessing;
 using NPOI.XWPF.UserModel;
 
 namespace DocxToPdfConverter
 {
     public static class ParagraphProcessor
     {
-        public static void ProcessParagraph(XWPFParagraph para, Section section)
+        public static void ProcessParagraph(XWPFParagraph para, DocumentObject docObj)
         {
-            var mdPara = section.AddParagraph();
+            Paragraph mdPara;
+
+            switch (docObj)
+            {
+                case Section section:
+                {
+                    if (para.IsPageBreak || HasVisualBreak(para))
+                    {
+                        section.AddPageBreak();
+                    }
+
+                    mdPara = section.AddParagraph();
+                    break;
+                }
+                case HeaderFooter footer:
+                    mdPara = footer.AddParagraph();
+                    break;
+                default:
+                    return;
+            }
+
             ApplyParagraphFormatting(para, mdPara);
             AddRuns(para, mdPara);
+        }
+
+        private static bool HasVisualBreak(XWPFParagraph paragraph)
+        {
+            var rList = paragraph.GetCTP().GetRList();
+
+            return rList
+                .Any(run => run.ItemsElementName
+                    .Any(n => n == RunItemsChoiceType.lastRenderedPageBreak));
         }
 
         public static void ProcessParagraph(XWPFParagraph para, Cell cell)
