@@ -103,10 +103,10 @@ namespace NpoiHelpers
                 return 0.0;
             }
 
-            using var paint = GetSKPaint(fontName, fontHeightPt);
-            var linesCount = GetLinesCount(widthPt, text, paint);
+            using var font = GetSKFont(fontName, fontHeightPt);
+            var linesCount = GetLinesCount(widthPt, text, font);
 
-            var metrics = paint.FontMetrics;
+            var metrics = font.Metrics;
 
             double lineHeight = Math.Ceiling(Math.Abs(metrics.Ascent)) + Math.Ceiling(Math.Abs(metrics.Descent)) + Math.Ceiling(metrics.Leading);
 
@@ -117,47 +117,27 @@ namespace NpoiHelpers
             return result;
         }
 
-        /// <summary>
-        /// настройка skiaSharp под шрифт. вынес для тестов.
-        /// </summary>
-        /// <param name="fontName">Шрифт Arial по умолчанию.</param>
-        /// <param name="fontHeightPt">высота шрифта в точках. Кегль во всем документе = 10, поэтому ставим по-умолчанию.</param>
-        /// <returns>SKPaint сущность.</returns>
-        public static SKPaint GetSKPaint(string fontName, float fontHeightPt)
+        public static SKFont GetSKFont(string fontName, float fontHeightPt)
         {
-            var result = new SKPaint();
-            using var typeface = SKTypeface.FromFamilyName(fontName, SKFontStyle.Bold);
-
-            result.Typeface = typeface;
-            result.TextSize = fontHeightPt;
-            return result;
+            var typeface = SKTypeface.FromFamilyName(fontName, SKFontStyle.Bold);
+            var font = new SKFont(typeface, fontHeightPt);
+            return font;
         }
 
-        /// <summary>
-        /// Получить количество строк, на которое разбивается данный текст.
-        /// </summary>
-        /// <param name="widthPt">максимальная ширина на текст.</param>
-        /// <param name="text">текст.</param>
-        /// <param name="paint">SKPaint сущность.</param>
-        /// <returns>количество строк.</returns>
-        public static int GetLinesCount(int widthPt, string text, SKPaint paint)
+        public static int GetLinesCount(int widthPt, string text, SKFont font)
         {
             using StringReader textStream = new StringReader(text);
             string line = textStream.ReadLine();
             var cellWidth = widthPt * PointsPerInch;
-            double whiteSpaceWidth = paint.MeasureText(" ");
+            double whiteSpaceWidth = font.MeasureText(" ");
 
             int linesCount = 0;
             while (line != null)
             {
-                // Делим строку на массив из слов (исключая пробелы).
-                // Слова с тире (без пробела), так же разделяем, так как в Excel возможен перенос слова с тире,
-                // если оно не помещается в ширину ячейки.
                 var regex = new Regex(@"[^\-\s]+|(\-)");
                 var matches = regex.Matches(line);
                 var wordsInLine = matches.Select(x => x.Value).ToList();
 
-                // Если внутри текста есть /r/n, то перенос занимает целую строку в ячейке.
                 if (wordsInLine.Count == 0)
                 {
                     linesCount++;
@@ -167,14 +147,12 @@ namespace NpoiHelpers
 
                 foreach (var word in wordsInLine)
                 {
-                    double wordWidth = paint.MeasureText(word);
+                    double wordWidth = font.MeasureText(word);
                     wordsWidthInLine.Add(wordWidth * PxToPtRatio);
                 }
 
                 double lineWidthSummary = 0;
 
-                // По порядку суммируем слова и проверям, вмещаются ли они в ширину ячейки Excel.
-                // Если нет, переносим слово на следующую строку.
                 for (int i = 0; i < wordsWidthInLine.Count; i++)
                 {
                     var wordWithWhiteSpaceWidth = wordsWidthInLine[i] + whiteSpaceWidth;
@@ -183,8 +161,6 @@ namespace NpoiHelpers
                     if (lineWidth < cellWidth)
                     {
                         lineWidthSummary = lineWidth;
-                        // Проверяем, что суммировали последнее слово подстроки.
-                        // И раз оно тоже поместилось в ширину ячейки, добавляем последнюю строку.
                         if (i == wordsWidthInLine.Count - 1)
                         {
                             linesCount++;
@@ -192,7 +168,6 @@ namespace NpoiHelpers
                     }
                     else
                     {
-                        // Если слово + пробел не помещаются в ширину ячейки, то точно нужна строка.
                         if (wordWithWhiteSpaceWidth >= cellWidth)
                         {
                             linesCount += (int)Math.Ceiling(lineWidth / cellWidth);
@@ -214,14 +189,12 @@ namespace NpoiHelpers
                 line = textStream.ReadLine();
             }
 
-            // Ищем все множественные пробелы и группируем в единую строку.
             var whiteSpacesRegex = new Regex(@"[ ]{2,}");
             var whiteSpacesMatches = whiteSpacesRegex.Matches(text);
             var whiteSpacesInText = whiteSpacesMatches.Select(x => x.Value.Replace("  ", " ")).ToList();
             var whiteSpacesString = string.Join("", whiteSpacesInText);
-            double allWhiteSpacesWidth = paint.MeasureText(whiteSpacesString) * PxToPtRatio;
+            double allWhiteSpacesWidth = font.MeasureText(whiteSpacesString) * PxToPtRatio;
 
-            // Добавлем число строк, которые помещаются в сумму множественных пробелов.
             linesCount += (int)( allWhiteSpacesWidth / ( widthPt * PointsPerInch));
             return linesCount;
         }

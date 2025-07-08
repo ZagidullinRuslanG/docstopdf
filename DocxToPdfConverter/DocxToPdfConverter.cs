@@ -32,7 +32,7 @@ namespace DocxToPdfConverter
                     }
                 }
             }
-            var pdfRenderer = new PdfDocumentRenderer(true);
+            var pdfRenderer = new PdfDocumentRenderer();
             pdfRenderer.Document = document;
             pdfRenderer.RenderDocument();
             pdfRenderer.Save(pdfPath);

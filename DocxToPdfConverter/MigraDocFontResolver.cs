@@ -8,6 +8,8 @@ namespace DocxToPdfConverter
 
         public byte[] GetFont(string faceName)
         {
+            if (string.IsNullOrEmpty(faceName))
+                throw new ArgumentNullException(nameof(faceName));
             string fontFile = null;
             string lowerFace = faceName.Trim().ToLowerInvariant();
             if (lowerFace.StartsWith("courier new"))
@@ -46,7 +48,7 @@ namespace DocxToPdfConverter
                     _ => "arial.ttf"
                 };
             }
-            string path = Path.Combine(FontsFolder, fontFile);
+            string path = Path.Combine(FontsFolder, fontFile ?? "arial.ttf");
             return File.ReadAllBytes(path);
         }
 

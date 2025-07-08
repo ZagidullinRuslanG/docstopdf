@@ -41,8 +41,8 @@ namespace XlsxToPdfConverter.Diy
             pages = new ();
 
             var curPage = doc.AddPage();
-            curPage.Width = new XUnit(layout.PageActualSize.Width);
-            curPage.Height = new XUnit(layout.PageActualSize.Height);
+            curPage.Width = XUnit.FromPoint(layout.PageActualSize.Width);
+            curPage.Height = XUnit.FromPoint(layout.PageActualSize.Height);
             var curPageCellBordersWriter = new PdfCellBordersWriter(curPage, partLayout.PrintScale);
             var curPageCellBackgroundWriter = new PdfCellBackgroundWriter(curPage, partLayout.PrintScale);
 
@@ -151,8 +151,8 @@ namespace XlsxToPdfConverter.Diy
                 // ...создаем следующую
 
                 var curPage = doc.AddPage();
-                curPage.Width = partLayout.PageActualSize.Width;
-                curPage.Height = partLayout.PageActualSize.Height;
+                curPage.Width = XUnit.FromPoint(partLayout.PageActualSize.Width);
+                curPage.Height = XUnit.FromPoint(partLayout.PageActualSize.Height);
                 var curPageCellBordersWriter = new PdfCellBordersWriter(curPage, partLayout.PrintScale);
                 var curPageCellBackgroundWriter = new PdfCellBackgroundWriter(curPage, partLayout.PrintScale);
 

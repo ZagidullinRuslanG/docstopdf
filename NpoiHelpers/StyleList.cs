@@ -22,6 +22,7 @@ namespace NpoiHelpers
         public StyleList()
         {
             styles = new List<Style>();
+            defaultFont = null!;
         }
 
         public StyleList(IFont defaultFont)

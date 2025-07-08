@@ -8,6 +8,8 @@ namespace DocxToPdfConverter
     {
         public static void ProcessTable(XWPFTable table, Section section)
         {
+            if (table == null || table.Rows == null || table.Rows.Count == 0 || table.Rows[0] == null)
+                return;
             var mdTable = section.AddTable();
             mdTable.Borders.Visible = true;
             mdTable.Rows.Alignment = RowAlignment.Left;
@@ -133,6 +135,8 @@ namespace DocxToPdfConverter
 
         public static void ProcessTable(XWPFTable table, Cell cell)
         {
+            if (table == null || table.Rows == null || table.Rows.Count == 0 || table.Rows[0] == null)
+                return;
             var mdTable = cell.Elements.AddTable();
             mdTable.Rows.Alignment = RowAlignment.Left;
             mdTable.Rows.LeftIndent = Unit.Zero;

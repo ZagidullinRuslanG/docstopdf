@@ -53,7 +53,6 @@ namespace DocxToPdfConverter
 
         private static void AddRuns(XWPFParagraph para, Paragraph mdPara)
         {
-            bool hasContent = false;
             foreach (var run in para.Runs)
             {
                 // 1. Добавляем текст, если есть
@@ -71,7 +70,6 @@ namespace DocxToPdfConverter
                             (byte)int.Parse(clr.Substring(0, 2), System.Globalization.NumberStyles.HexNumber),
                             (byte)int.Parse(clr.Substring(2, 2), System.Globalization.NumberStyles.HexNumber),
                             (byte)int.Parse(clr.Substring(4, 2), System.Globalization.NumberStyles.HexNumber));
-                    hasContent = true;
                 }
                 // 2. Добавляем картинки inline
                 var pictures = run.GetEmbeddedPictures();
@@ -88,7 +86,6 @@ namespace DocxToPdfConverter
                             var image = mdPara.AddImage(imgStr);
                             image.LockAspectRatio = true;
                             image.Width = "5cm";
-                            hasContent = true;
                         }
                         else
                         {
