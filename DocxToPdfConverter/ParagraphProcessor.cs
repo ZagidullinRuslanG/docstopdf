@@ -53,51 +53,52 @@ namespace DocxToPdfConverter
 
         private static void AddRuns(XWPFParagraph para, Paragraph mdPara)
         {
+            bool hasContent = false;
             foreach (var run in para.Runs)
             {
-                // Добавляем текст, как раньше
-                var mdText = mdPara.AddFormattedText(run.Text);
-                if (run.IsBold) mdText.Bold = true;
-                if (run.IsItalic) mdText.Italic = true;
-                if (run.Underline != UnderlinePatterns.None) mdText.Underline = Underline.Single;
-                if (run.FontSize > 0) mdText.Size = run.FontSize;
-                if (!string.IsNullOrEmpty(run.FontFamily)) mdText.Font.Name = run.FontFamily;
-                var clr = run.GetCTR().rPr?.color?.val;
-                if (!string.IsNullOrEmpty(clr) && clr.Length == 6)
+                // 1. Добавляем текст, если есть
+                if (!string.IsNullOrEmpty(run.Text))
                 {
-                    try
-                    {
-                        int rr = System.Convert.ToInt32(clr.Substring(0, 2), 16);
-                        int gg = System.Convert.ToInt32(clr.Substring(2, 2), 16);
-                        int bb = System.Convert.ToInt32(clr.Substring(4, 2), 16);
-                        mdText.Color = Color.FromRgb((byte)rr, (byte)gg, (byte)bb);
-                    }
-                    catch { }
+                    var mdText = mdPara.AddFormattedText(run.Text);
+                    if (run.IsBold) mdText.Bold = true;
+                    if (run.IsItalic) mdText.Italic = true;
+                    if (run.Underline != UnderlinePatterns.None) mdText.Underline = Underline.Single;
+                    if (run.FontSize > 0) mdText.Size = run.FontSize;
+                    if (!string.IsNullOrEmpty(run.FontFamily)) mdText.Font.Name = run.FontFamily;
+                    var clr = run.GetCTR().rPr?.color?.val;
+                    if (!string.IsNullOrEmpty(clr) && clr.Length == 6)
+                        mdText.Color = Color.FromRgb(
+                            (byte)int.Parse(clr.Substring(0, 2), System.Globalization.NumberStyles.HexNumber),
+                            (byte)int.Parse(clr.Substring(2, 2), System.Globalization.NumberStyles.HexNumber),
+                            (byte)int.Parse(clr.Substring(4, 2), System.Globalization.NumberStyles.HexNumber));
+                    hasContent = true;
                 }
-
-                // --- Добавляем обработку картинок ---
+                // 2. Добавляем картинки inline
                 var pictures = run.GetEmbeddedPictures();
                 if (pictures != null && pictures.Count > 0)
                 {
                     foreach (var pic in pictures)
                     {
                         var picData = pic.GetPictureData();
-                        if (picData != null)
+                        if (picData != null && picData.Data != null && picData.Data.Length > 0)
                         {
-                            // Определяем расширение файла
-                            string ext = picData.SuggestFileExtension();
-                            if (string.IsNullOrEmpty(ext)) ext = "png";
-                            // Создаем временный файл
-                            string tempFile = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + "." + ext);
-                            File.WriteAllBytes(tempFile, picData.Data);
-                            // Вставляем картинку в параграф
-                            mdPara.AddImage(tempFile);
-                            // Добавляем путь к временному файлу в список для последующего удаления
-                            TempImageFiles.Add(tempFile);
+                            string base64 = Convert.ToBase64String(picData.Data);
+                            string imgStr = "base64:" + base64;
+                            // Логирование информации о картинке
+                            Console.WriteLine($"[Image] Type: {picData.SuggestFileExtension()}, Size: {picData.Data.Length} bytes, Base64: {base64.Substring(0, Math.Min(30, base64.Length))}...");
+                            var image = mdPara.AddImage(imgStr);
+                            image.LockAspectRatio = true;
+                            image.Width = "5cm";
+                            hasContent = true;
+                        }
+                        else
+                        {
+                            Console.WriteLine("[Image] Warning: Empty or null image data");
                         }
                     }
                 }
             }
+            // Если нет контента, не добавлять пустой параграф (для таблиц)
         }
 
         // --- Для хранения временных файлов ---
