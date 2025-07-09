@@ -1,3 +1,4 @@
+using MigraDoc.DocumentObjectModel;
 using PdfSharp.Fonts;
 using MigraDoc.Rendering;
 using NPOI.XWPF.UserModel;
@@ -20,17 +21,28 @@ namespace DocxToPdfConverter
             using (var stream = File.OpenRead(docxPath))
             {
                 var doc = new XWPFDocument(stream);
-                foreach (var element in doc.BodyElements)
+
+                ProcessBodyElements(doc, section);
+
+                //колонтитул первой страницы
+                var firstPageFooter = doc.GetHeaderFooterPolicy().GetFirstPageFooter();
+                if (firstPageFooter is not null)
                 {
-                    if (element is XWPFParagraph para)
-                    {
-                        ParagraphProcessor.ProcessParagraph(para, section);
-                    }
-                    else if (element is XWPFTable table)
-                    {
-                        TableProcessor.ProcessTable(table, section);
-                    }
+                    section.PageSetup.DifferentFirstPageHeaderFooter = true;
+
+                    var firstPageSection = section.Footers.FirstPage;
+                    ProcessBodyElements(firstPageFooter, firstPageSection!);
                 }
+
+                //колонтитулы остальных страниц
+                var evenPageFooter = doc.GetHeaderFooterPolicy().GetDefaultFooter();
+                if (evenPageFooter is not null)
+                {
+                    var evenPageSection = section.Footers.Primary;
+                    ProcessBodyElements(evenPageFooter, evenPageSection!);
+                }
+
+
             }
             var pdfRenderer = new PdfDocumentRenderer();
             pdfRenderer.Document = document;
@@ -43,6 +55,23 @@ namespace DocxToPdfConverter
                 try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
             }
             ParagraphProcessor.TempImageFiles.Clear();
+        }
+
+        private static void ProcessBodyElements(IBody doc, DocumentObject section)
+        {
+            foreach (var element in doc.BodyElements)
+            {
+                switch (element)
+                {
+                    case XWPFParagraph para:
+                        ParagraphProcessor.ProcessParagraph(para, section);
+                        break;
+
+                    case XWPFTable table:
+                        TableProcessor.ProcessTable(table, section);
+                        break;
+                }
+            }
         }
     }
 } 
