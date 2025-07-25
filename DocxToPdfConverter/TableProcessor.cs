@@ -1,6 +1,11 @@
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
+using NPOI.OpenXmlFormats.Wordprocessing;
 using NPOI.XWPF.UserModel;
+using Cell = MigraDoc.DocumentObjectModel.Tables.Cell;
+using HeaderFooter = MigraDoc.DocumentObjectModel.HeaderFooter;
+using PageSetup = MigraDoc.DocumentObjectModel.PageSetup;
+using Table = MigraDoc.DocumentObjectModel.Tables.Table;
 
 namespace DocxToPdfConverter
 {
@@ -30,61 +35,38 @@ namespace DocxToPdfConverter
                     return;
             }
 
-            //однозначного соответствия в адресации дефолтных границ нет, поэтому по умолчанию ставим в таблицу
-            //visible в случае, когда в исходной таблице хотя бы где-то видимость по умолчанию
-            mdTable.Borders.Visible = table.InsideHBorderType != XWPFTable.XWPFBorderType.NONE
-                || table.InsideVBorderType != XWPFTable.XWPFBorderType.NONE;
+            SetBorders(table, mdTable);
 
             mdTable.Rows.Alignment = RowAlignment.Left;
             mdTable.Rows.LeftIndent = Unit.Zero;
-            int colCount = table.Rows[0].GetTableCells().Count;
+
+            int colCount = CalculateColCount(table);
+
             var grid = table.GetCTTbl().tblGrid;
-            List<double> colWidthsPt = new List<double>();
-            bool hasGrid = grid != null && grid.gridCol != null && grid.gridCol.Count > 0;
+            var colWidthsPt = new List<double>();
+            const double charToPt = 7.5; // 1 символ ≈ 6pt (0.21см)
+
+            bool hasGrid = grid is { gridCol.Count: > 0 };
             if (hasGrid)
             {
-                foreach (var col in grid.gridCol)
-                {
-                    double widthPt = col.w / 20.0; // twips to points
-                    colWidthsPt.Add(widthPt);
-                }
-                while (colWidthsPt.Count < colCount)
-                {
-                    colWidthsPt.Add(71); // 2.5 см = 71 pt
-                }
+                colWidthsPt.AddRange(grid.gridCol.Select(col => col.w / 20.0));
             }
             else
             {
                 // --- Новый алгоритм: ширина по максимальной длине текста ---
-                double minWidthPt = 71; // 2.5 см
-                double maxWidthPt = 226; // 8 см
-                double charToPt = 6.0; // 1 символ ≈ 6pt (0.21см)
-                int rowCount = table.Rows.Count;
-                List<int> maxLens = new List<int>(new int[colCount]);
-                foreach (var row in table.Rows)
-                {
-                    for (int c = 0; c < colCount; c++)
-                    {
-                        var cell = row.GetCell(c);
-                        if (cell != null)
-                        {
-                            int len = 0;
-                            foreach (var elem in cell.BodyElements)
-                            {
-                                if (elem is XWPFParagraph para)
-                                    len += para.ParagraphText?.Length ?? 0;
-                            }
-                            maxLens[c] = Math.Max(maxLens[c], len);
-                        }
-                    }
-                }
+                const double minWidthPt = 71;  // 2.5 см
+                const double maxWidthPt = 226; // 8 см
+
+                var maxLens = CollectMaxLensByColumns(table, colCount);
                 double totalLen = maxLens.Sum();
+
                 // 1. Считаем "естественную" ширину
                 for (int c = 0; c < colCount; c++)
                 {
                     double w = Math.Max(minWidthPt, Math.Min(maxWidthPt, maxLens[c] * charToPt));
                     colWidthsPt.Add(w);
                 }
+
                 // 2. Если сумма меньше ширины страницы — распределяем остаток пропорционально длине текста
                 var pageWidthPt = (pageSetup.PageWidth - pageSetup.LeftMargin - pageSetup.RightMargin).Point;
                 double totalWidthPt = colWidthsPt.Sum();
@@ -97,6 +79,7 @@ namespace DocxToPdfConverter
                         colWidthsPt[c] += add;
                     }
                 }
+
                 // 3. Если сумма больше ширины страницы — масштабируем
                 totalWidthPt = colWidthsPt.Sum();
                 if (totalWidthPt > pageWidthPt)
@@ -106,15 +89,17 @@ namespace DocxToPdfConverter
                         colWidthsPt[i] *= scale;
                 }
             }
-            // Ограничения min/max ширины (1.5см=42pt, 8см=226pt)
-            for (int i = 0; i < colWidthsPt.Count; i++)
-            {
-                colWidthsPt[i] = Math.Max(42, Math.Min(colWidthsPt[i], 226));
-            }
+
             // Убираем жёсткое масштабирование: если таблица не влезает — пусть выходит за границы
             for (int c = 0; c < colCount; c++)
                 mdTable.AddColumn(Unit.FromPoint(colWidthsPt[c]));
+
+            //Соберем карту объединения ячеек по вертикали
+            var vMerges = CollectVerticalMerges(table, colCount);
+
             bool isFirstRow = true;
+
+            var r = 0;
             foreach (var row in table.Rows)
             {
                 var mdRow = mdTable.AddRow();
@@ -123,57 +108,146 @@ namespace DocxToPdfConverter
                     mdRow.HeadingFormat = true;
                     isFirstRow = false;
                 }
+
                 mdRow.VerticalAlignment = VerticalAlignment.Center;
-                for (int c = 0; c < colCount; c++)
+
+                var colNumber = 0;
+                foreach (var cell in row.GetTableCells())
                 {
-                    var cell = row.GetCell(c);
-                    var mdCell = mdRow.Cells[c];
-                    if (cell != null)
+                    var cellProps = cell.GetCTTc()?.tcPr;
+
+                    var mdCell = mdRow.Cells[colNumber];
+                    var vMerge = vMerges[r, colNumber];
+                    var colWidth = colWidthsPt[colNumber];
+
+                    var hasGridSpan = int.TryParse(cellProps?.gridSpan?.val, out var span);
+                    colNumber += hasGridSpan ? span : 1;
+
+                    if (hasGridSpan)
                     {
-                        // Включаем перенос текста в ячейке
-                        mdCell.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Left;
-                        var shd = cell.GetCTTc().tcPr?.shd;
-                        if (shd != null && !string.IsNullOrEmpty(shd.fill) && shd.fill != "auto" && shd.fill.Length == 6)
+                        mdCell.MergeRight = span - 1;
+                    }
+
+                    mdCell.MergeDown = vMerge;
+
+                    mdCell.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Left;
+
+                    foreach (var elem in cell.BodyElements)
+                    {
+                        switch (elem)
                         {
-                            try
-                            {
-                                int rCol = System.Convert.ToInt32(shd.fill.Substring(0, 2), 16);
-                                int gCol = System.Convert.ToInt32(shd.fill.Substring(2, 2), 16);
-                                int bCol = System.Convert.ToInt32(shd.fill.Substring(4, 2), 16);
-                                mdCell.Shading.Color = Color.FromRgb((byte)rCol, (byte)gCol, (byte)bCol);
-                            }
-                            catch { }
-                        }
-                        foreach (var elem in cell.BodyElements)
-                        {
-                            if (elem is XWPFParagraph para)
-                                ParagraphProcessor.ProcessParagraph(para, mdCell);
-                            else if (elem is XWPFTable nestedTable)
+                            case XWPFParagraph para:
+                                var maxWordLen = (int)(colWidth / charToPt);
+                                    ParagraphProcessor.ProcessParagraph(para, mdCell, maxWordLen);
+                                 break;
+                            case XWPFTable nestedTable:
                                 ProcessTable(nestedTable, mdCell);
+                                break;
                         }
                     }
                 }
+
+                r++;
             }
         }
 
-        public static void ProcessTable(XWPFTable table, Cell cell)
+        private static int CalculateColCount(XWPFTable table)
         {
-            if (table == null || table.Rows == null || table.Rows.Count == 0 || table.Rows[0] == null)
+            return table
+                .Rows[0]
+                .GetTableCells()
+                .Sum(cell => int.TryParse(cell?.GetCTTc()?.tcPr?.gridSpan?.val, out var hMerge) ? hMerge : 1);
+        }
+
+        private static int[,] CollectVerticalMerges(XWPFTable table, int colCount)
+        {
+            var vMerges = new int[table.Rows.Count, colCount];
+            var r = 0;
+            foreach (var row in table.Rows)
+            {
+                var c = 0;
+                foreach (var cell in row.GetTableCells())
+                {
+                    var cellProps = cell?.GetCTTc()?.tcPr;
+
+                    switch (cellProps?.vMerge?.val)
+                    {
+                        case ST_Merge.restart:
+                            vMerges[r, c] = 1;
+                            break;
+                        case ST_Merge.@continue:
+                            int pr;
+                            for (pr = r-1; pr > 0 && vMerges[pr, c] == 0 ; pr--) { }
+                            vMerges[pr, c]++;
+                            break;
+                    }
+
+                    c += int.TryParse(cellProps?.gridSpan?.val, out var hMerge) ? hMerge : 1;
+                }
+
+                r++;
+            }
+
+            return vMerges;
+        }
+
+        private static List<int> CollectMaxLensByColumns(XWPFTable table, int colCount)
+        {
+            var maxLens = new List<int>(new int[colCount]);
+
+            foreach (var row in table.Rows)
+            {
+                for (int c = 0; c < colCount; c++)
+                {
+                    var cell = row.GetCell(c);
+                    if (cell != null)
+                    {
+                        int len = 0;
+                        foreach (var elem in cell.BodyElements)
+                        {
+                            if (elem is XWPFParagraph para)
+                                len += para.ParagraphText?.Length ?? 0;
+                        }
+
+                        maxLens[c] = Math.Max(maxLens[c], len);
+                    }
+                }
+            }
+
+            return maxLens;
+        }
+
+        private static void SetBorders(XWPFTable table, Table mdTable)
+        {
+            var tblBorders = table.GetCTTbl().tblPr.tblBorders;
+
+            mdTable.Borders.Visible = true;
+            if (tblBorders is not null)
+            {
+                mdTable.Borders.Visible = tblBorders.insideH.sz > 0 || tblBorders.insideV.sz > 0
+                    || tblBorders.bottom.sz > 0
+                    || tblBorders.top.sz > 0 || tblBorders.left.sz > 0 || tblBorders.right.sz > 0;
+            }
+        }
+
+        private static void ProcessTable(XWPFTable table, Cell cell)
+        {
+            if (table?.Rows == null || table.Rows.Count == 0 || table.Rows[0] == null)
                 return;
+
             var mdTable = cell.Elements.AddTable();
             mdTable.Rows.Alignment = RowAlignment.Left;
             mdTable.Rows.LeftIndent = Unit.Zero;
+
             int colCount = table.Rows[0].GetTableCells().Count;
             var grid = table.GetCTTbl().tblGrid;
-            List<double> colWidthsPt = new List<double>();
-            bool hasGrid = grid != null && grid.gridCol != null && grid.gridCol.Count > 0;
+            var colWidthsPt = new List<double>();
+            bool hasGrid = grid is { gridCol.Count: > 0 };
+
             if (hasGrid)
             {
-                foreach (var col in grid.gridCol)
-                {
-                    double widthPt = col.w / 20.0;
-                    colWidthsPt.Add(widthPt);
-                }
+                colWidthsPt.AddRange(grid.gridCol.Select(col => col.w / 20.0));
+
                 while (colWidthsPt.Count < colCount)
                 {
                     colWidthsPt.Add(42); // 1.5 см = 42 pt
@@ -181,11 +255,11 @@ namespace DocxToPdfConverter
             }
             else
             {
-                double minWidthPt = 42;
-                double maxWidthPt = 226;
-                double charToPt = 6.0;
-                int rowCount = table.Rows.Count;
-                List<int> maxLens = new List<int>(new int[colCount]);
+                const double minWidthPt = 42;
+                const double maxWidthPt = 226;
+                const double charToPt = 6.0;
+
+                var maxLens = new List<int>(new int[colCount]);
                 foreach (var row in table.Rows)
                 {
                     for (int c = 0; c < colCount; c++)
@@ -199,22 +273,27 @@ namespace DocxToPdfConverter
                                 if (elem is XWPFParagraph para)
                                     len += para.ParagraphText?.Length ?? 0;
                             }
+
                             maxLens[c] = Math.Max(maxLens[c], len);
                         }
                     }
                 }
+
                 for (int c = 0; c < colCount; c++)
                 {
                     double w = Math.Max(minWidthPt, Math.Min(maxWidthPt, maxLens[c] * charToPt));
                     colWidthsPt.Add(w);
                 }
             }
+
             for (int i = 0; i < colWidthsPt.Count; i++)
             {
                 colWidthsPt[i] = Math.Max(42, Math.Min(colWidthsPt[i], 226));
             }
+
             for (int c = 0; c < colCount; c++)
                 mdTable.AddColumn(Unit.FromPoint(colWidthsPt[c]));
+
             foreach (var row in table.Rows)
             {
                 var mdRow = mdTable.AddRow();
@@ -228,14 +307,19 @@ namespace DocxToPdfConverter
                         mdCell.Format.Alignment = MigraDoc.DocumentObjectModel.ParagraphAlignment.Left;
                         foreach (var elem in cell2.BodyElements)
                         {
-                            if (elem is XWPFParagraph para)
-                                ParagraphProcessor.ProcessParagraph(para, mdCell);
-                            else if (elem is XWPFTable nestedTable)
-                                ProcessTable(nestedTable, mdCell);
+                            switch (elem)
+                            {
+                                case XWPFParagraph para:
+                                    ParagraphProcessor.ProcessParagraph(para, mdCell, 0);
+                                    break;
+                                case XWPFTable nestedTable:
+                                    ProcessTable(nestedTable, mdCell);
+                                    break;
+                            }
                         }
                     }
                 }
             }
         }
     }
-} 
+}

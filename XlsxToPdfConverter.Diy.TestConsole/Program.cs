@@ -14,7 +14,6 @@ namespace XlsxToPdfConverter.Diy.TestConsole
             {
                 string dir = args[0];
                 var xlsxConverter = new XlsxToPdfDiyConverter();
-                var docxConverter = new DocxToPdfConverter.DocxToPdfConverter();
                 string jobId = Guid.NewGuid().ToString("N");
                 foreach (string file in Directory.GetFiles(dir, "*.xlsx", SearchOption.TopDirectoryOnly))
                 {
@@ -25,7 +24,7 @@ namespace XlsxToPdfConverter.Diy.TestConsole
                 {
                     if (Path.GetFileName(file).StartsWith("~$"))
                         continue; // пропускаем временные файлы Word
-                    docxConverter.Convert(file, file + $".{jobId}.pdf");
+                    DocxToPdfConverter.DocxToPdfConverter.Convert(file, file + $".{jobId}.pdf");
                     Console.WriteLine($"DOCX to PDF: {file} -> {file}.{jobId}.pdf");
                 }
                 return;
@@ -34,8 +33,7 @@ namespace XlsxToPdfConverter.Diy.TestConsole
             {
                 if (args[0].EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
                 {
-                    var docxConverter = new DocxToPdfConverter.DocxToPdfConverter();
-                    docxConverter.Convert(args[0], args[1]);
+                    DocxToPdfConverter.DocxToPdfConverter.Convert(args[0], args[1]);
                     Console.WriteLine($"DOCX to PDF: {args[0]} -> {args[1]}");
                 }
                 else if (args[0].EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
