@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\DocxToPdfConverter.Core\DocxToPdfConverter.Core.csproj" />
     <ProjectReference Include="..\XlsxToPdfConverter.Diy\XlsxToPdfConverter.Diy.csproj" />
   </ItemGroup>
 

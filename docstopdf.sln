@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NpoiHelpers", "NpoiHelpers\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocxToPdfConverter", "DocxToPdfConverter\DocxToPdfConverter.csproj", "{4CBA11D1-35C7-4D11-98D7-130CA23DB337}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocxToPdfConverter.Core", "DocxToPdfConverter.Core\DocxToPdfConverter.Core.csproj", "{5CBA11D1-35C7-4D11-98D7-130CA23DB337}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +38,9 @@ Global
 		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4CBA11D1-35C7-4D11-98D7-130CA23DB337}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5CBA11D1-35C7-4D11-98D7-130CA23DB337}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5CBA11D1-35C7-4D11-98D7-130CA23DB337}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5CBA11D1-35C7-4D11-98D7-130CA23DB337}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5CBA11D1-35C7-4D11-98D7-130CA23DB337}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
