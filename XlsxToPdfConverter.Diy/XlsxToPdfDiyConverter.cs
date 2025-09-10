@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using DocxToPdfConverter.Core;
 using NpoiHelpers;
 using NPOI.SS.UserModel;
 using NPOI.XSSF.UserModel;
@@ -9,8 +10,10 @@ namespace XlsxToPdfConverter.Diy
     /// <summary>
     /// Преобразование документа XLSX в PDF.
     /// </summary>
-    public class XlsxToPdfDiyConverter : IXlsxToPdfConverter
+    public class XlsxToPdfDiyConverter : IXlsxToPdfConverter, IDocumentConverter
     {
+        public string[] SupportedExtensions => new[] { ".xlsx" };
+
         public void Convert(string xlsxPath, string pdfPath)
         {
             var mergedCellsAddresses = new MergedCellsDataXlsxDocReader().GetMergedCellsData(xlsxPath);
@@ -19,12 +22,38 @@ namespace XlsxToPdfConverter.Diy
             workbook.Close();
         }
 
+        public void Convert(Stream inputStream, string pdfPath)
+        {
+            if (inputStream == null)
+                throw new ArgumentNullException(nameof(inputStream));
+            if (string.IsNullOrEmpty(pdfPath))
+                throw new ArgumentException("Путь к выходному файлу не может быть пустым", nameof(pdfPath));
+
+            try
+            {
+                // Создаем копию потока для чтения данных о объединенных ячейках
+                var streamCopy = new MemoryStream();
+                inputStream.CopyTo(streamCopy);
+                streamCopy.Position = 0;
+                
+                var mergedCellsAddresses = new MergedCellsDataXlsxDocReader().GetMergedCellsData(streamCopy);
+                
+                // Сбрасываем позицию исходного потока
+                inputStream.Position = 0;
+                IWorkbook workbook = new XSSFWorkbook(inputStream);
+                Convert(workbook, mergedCellsAddresses, pdfPath);
+                workbook.Close();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка при конвертации из потока: {ex.Message}");
+                throw;
+            }
+        }
+
         public void Convert(MemoryStream xlsxFile, string pdfPath)
         {
-            var mergedCellsAddresses = new MergedCellsDataXlsxDocReader().GetMergedCellsData(xlsxFile);
-            IWorkbook workbook = new XSSFWorkbook(xlsxFile);
-            Convert(workbook, mergedCellsAddresses, pdfPath);
-            workbook.Close();
+            Convert((Stream)xlsxFile, pdfPath);
         }
 
         private void Convert(

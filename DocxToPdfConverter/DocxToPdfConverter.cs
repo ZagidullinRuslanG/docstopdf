@@ -3,13 +3,28 @@ using PdfSharp.Fonts;
 using MigraDoc.Rendering;
 using NPOI.OpenXmlFormats.Wordprocessing;
 using NPOI.XWPF.UserModel;
+using DocxToPdfConverter.Core;
 using Document = MigraDoc.DocumentObjectModel.Document;
 using MdModel = MigraDoc.DocumentObjectModel;
 
 namespace DocxToPdfConverter
 {
-    public class DocxToPdfConverter
+    public class DocxToPdfConverter : IDocumentConverter
     {
+        private readonly ILogger _logger;
+        private readonly ITempFileManager _tempFileManager;
+
+        public string[] SupportedExtensions => new[] { ".docx" };
+
+        public DocxToPdfConverter(ILogger? logger = null, ITempFileManager? tempFileManager = null)
+        {
+            _logger = logger ?? new ConsoleLogger();
+            _tempFileManager = tempFileManager ?? new TempFileManager(_logger);
+            
+            // Инициализация шрифтов
+            GlobalFontSettings.FontResolver = new MigraDocFontResolver();
+        }
+
         static DocxToPdfConverter()
         {
             GlobalFontSettings.FontResolver = new MigraDocFontResolver();
@@ -68,11 +83,25 @@ namespace DocxToPdfConverter
             }
         }
 
-        public static void Convert(string docxPath, string pdfPath)
+        public void Convert(string docxPath, string pdfPath)
         {
-            var document = new Document();
+            if (string.IsNullOrEmpty(docxPath))
+                throw new ArgumentException("Путь к входному файлу не может быть пустым", nameof(docxPath));
+            if (string.IsNullOrEmpty(pdfPath))
+                throw new ArgumentException("Путь к выходному файлу не может быть пустым", nameof(pdfPath));
 
-            using (var stream = File.OpenRead(docxPath))
+            if (!File.Exists(docxPath))
+                throw new FileNotFoundException($"Файл не найден: {docxPath}");
+
+            try
+            {
+                _logger.LogInfo($"Начинаем конвертацию DOCX: {docxPath} -> {pdfPath}");
+                
+                using (_tempFileManager)
+                {
+                    var document = new Document();
+
+                    using (var stream = File.OpenRead(docxPath))
             {
                 var doc = new XWPFDocument(stream);
 
@@ -108,25 +137,54 @@ namespace DocxToPdfConverter
                 }
             }
 
-            var pdfRenderer = new PdfDocumentRenderer { Document = document };
-            pdfRenderer.RenderDocument();
-            pdfRenderer.Save(pdfPath);
-
-            // Удаляем временные файлы картинок
-            foreach (var tempFile in ParagraphProcessor.TempImageFiles)
-            {
-                try
-                {
-                    if (File.Exists(tempFile))
-                        File.Delete(tempFile);
+                    var pdfRenderer = new PdfDocumentRenderer { Document = document };
+                    pdfRenderer.RenderDocument();
+                    pdfRenderer.Save(pdfPath);
                 }
-                catch
-                {
-                    // ignored
-                }
+                
+                _logger.LogInfo($"Конвертация завершена успешно: {pdfPath}");
             }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Ошибка при конвертации {docxPath}: {ex.Message}", ex);
+                throw;
+            }
+        }
 
-            ParagraphProcessor.TempImageFiles.Clear();
+        public void Convert(Stream inputStream, string pdfPath)
+        {
+            if (inputStream == null)
+                throw new ArgumentNullException(nameof(inputStream));
+            if (string.IsNullOrEmpty(pdfPath))
+                throw new ArgumentException("Путь к выходному файлу не может быть пустым", nameof(pdfPath));
+
+            try
+            {
+                _logger.LogInfo($"Начинаем конвертацию DOCX из потока -> {pdfPath}");
+                
+                using (_tempFileManager)
+                {
+                    var document = new Document();
+                    var doc = new XWPFDocument(inputStream);
+
+                    ApplyDefaultSettings(document);
+                    ApplyMainStyleFormatting(doc, document);
+
+                    var bookmarks = CollectBookmarks(doc);
+                    ProcessBodyElements(doc, document, bookmarks);
+
+                    var pdfRenderer = new PdfDocumentRenderer { Document = document };
+                    pdfRenderer.RenderDocument();
+                    pdfRenderer.Save(pdfPath);
+                }
+                
+                _logger.LogInfo($"Конвертация завершена успешно: {pdfPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Ошибка при конвертации из потока: {ex.Message}", ex);
+                throw;
+            }
         }
 
         private static void ProcessBodyElements(IBody body, Document document, Dictionary<string, List<Bookmark>> bookmarks)
